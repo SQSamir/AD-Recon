@@ -20,8 +20,16 @@ def connect_to_ad(server_address, domain=None, username=None, password=None):
     print(f"Successfully connected to {server_address} using {bind_type} bind.")
     return conn
 
+def parse_domain_to_search_base(domain):
+    """
+    Convert a domain name like 'example.com' into an LDAP search base like 'dc=example,dc=com'.
+    """
+    parts = domain.split('.')
+    search_base = ','.join([f'dc={part}' for part in parts])
+    return search_base
+
 def enumerate_ldap_objects(conn, search_base):
-    print("\n[+] Enumerating LDAP objects...")
+    print(f"\n[+] Enumerating LDAP objects with search base: {search_base}")
 
     # Enumerate Domain Info
     conn.search(
@@ -66,7 +74,7 @@ def enumerate_ldap_objects(conn, search_base):
     # Enumerate Admins
     conn.search(
         search_base=search_base,
-        search_filter='(&(objectCategory=person)(objectClass=user)(memberOf=cn=Domain Admins,cn=Users,' + search_base + '))',
+        search_filter=f'(&(objectCategory=person)(objectClass=user)(memberOf=cn=Domain Admins,cn=Users,{search_base}))',
         attributes=['sAMAccountName', 'displayName', 'memberOf']
     )
     print("\n[+] Domain Admins:")
@@ -169,8 +177,7 @@ def main():
     parser.add_argument('--server', required=True, help='LDAP/DC server address')
     parser.add_argument('--username', help='Username for LDAP/SMB bind (optional for anonymous)')
     parser.add_argument('--password', help='Password for LDAP/SMB bind (optional for anonymous)')
-    parser.add_argument('--domain', help='Domain for LDAP/SMB bind (required if username is provided)')
-    parser.add_argument('--search-base', default='dc=domain,dc=com', help='Base DN for LDAP search (default: dc=domain,dc=com)')
+    parser.add_argument('--domain', required=True, help='Domain for LDAP/SMB bind in format like example.com')
     parser.add_argument('--kerberoast', action='store_true', help='Perform Kerberoasting')
     parser.add_argument('--asrep', help='Perform AS-REP Roasting with specified user file')
     parser.add_argument('--dump', action='store_true', help='Dump secrets using secretsdump')
@@ -179,13 +186,13 @@ def main():
     if args.username and not args.password:
         print("Password must be provided if username is specified.")
         exit()
-    if args.username and not args.domain:
-        print("Domain must be provided if username is specified.")
-        exit()
+
+    # Parse domain to search base
+    search_base = parse_domain_to_search_base(args.domain)
 
     # Connect to AD and perform LDAP enumeration
     conn = connect_to_ad(args.server, args.domain, args.username, args.password)
-    enumerate_ldap_objects(conn, args.search_base)
+    enumerate_ldap_objects(conn, search_base)
     conn.unbind()
 
     # Enumerate NetBIOS and SMB shares
