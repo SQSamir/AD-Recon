@@ -1,22 +1,26 @@
+
 # Advanced Active Directory Reconnaissance and Attack Script
 
-This script provides a comprehensive suite of tools for Active Directory (AD) reconnaissance and exploitation, inspired by various techniques outlined in Juggernaut Sec's tutorials. It integrates LDAP enumeration, SMB and NetBIOS scanning, Kerberos attacks, credential dumping, and other advanced methods for assessing AD security.
+This script provides a comprehensive suite of tools for Active Directory (AD) reconnaissance and exploitation. It integrates LDAP enumeration, SMB and NetBIOS scanning, Kerberos attacks, credential dumping, LAPS password extraction, and WebDAV exploitability checks.
 
 ## Features
 
 - **LDAP Enumeration**: Discover users, groups, computers, domain controllers, and other AD objects.
+- **Password Parsing**: Checks user and group descriptions for potential passwords.
+- **LAPS Password Dumping**: Extracts Local Administrator Password Solution (LAPS) passwords from AD if permissions allow.
 - **NetBIOS and SMB Enumeration**: Enumerate SMB shares, active sessions, connected users, and access to common shares.
 - **Kerberos Attacks**:
   - **Kerberoasting**: Extract service tickets for offline cracking.
   - **AS-REP Roasting**: Target accounts that do not require pre-authentication.
 - **Credential Dumping**: Extract credentials from NTDS.dit, SAM database, and LSA secrets using Impacket’s `secretsdump.py`.
+- **WebDAV Exploitability Check**: Checks if WebDAV is enabled and potentially exploitable on the target server.
 
 ## Prerequisites
 
 - Python 3.x
 - Install required Python libraries:
   ```bash
-  pip install ldap3 impacket
+  pip install ldap3 impacket requests
   ```
 - Impacket tools must be accessible in your Python environment (e.g., `GetUserSPNs.py`, `GetNPUsers.py`, `secretsdump.py`).
 
@@ -39,7 +43,7 @@ This script provides a comprehensive suite of tools for Active Directory (AD) re
 Run the script with minimal parameters to perform basic AD enumeration using LDAP and SMB (anonymous bind):
 
 ```bash
-python ad-recon.py --server <LDAP_SERVER>
+python ad-recon.py --server <LDAP_SERVER> --domain <DOMAIN>
 ```
 
 ### Authenticated LDAP and SMB Enumeration
@@ -66,6 +70,22 @@ Use AS-REP Roasting to target accounts that do not require pre-authentication:
 python ad-recon.py --server <LDAP_SERVER> --asrep <USER_FILE>
 ```
 
+### Dump LAPS Passwords
+
+Dump LAPS passwords from AD if your account has sufficient permissions:
+
+```bash
+python ad-recon.py --server <LDAP_SERVER> --username <USERNAME> --password <PASSWORD> --domain <DOMAIN> --laps
+```
+
+### Check WebDAV Exploitability
+
+Check if WebDAV is enabled and potentially exploitable:
+
+```bash
+python ad-recon.py --server <LDAP_SERVER> --webdav
+```
+
 ### Dump Secrets
 
 Dump NTDS.dit, SAM database, and LSA secrets using Impacket’s `secretsdump.py`:
@@ -83,13 +103,15 @@ python ad-recon.py --server <LDAP_SERVER> --username <USERNAME> --password <PASS
 - `--kerberoast`: Perform Kerberoasting.
 - `--asrep`: Perform AS-REP Roasting with specified user file.
 - `--dump`: Dump secrets using `secretsdump`.
+- `--laps`: Dump LAPS passwords from AD.
+- `--webdav`: Check if WebDAV is enabled and exploitable.
 
 ## Example Commands
 
 **Basic Recon (Anonymous Bind):**
 
 ```bash
-python ad-recon.py --server 192.168.1.100
+python ad-recon.py --server 192.168.1.100 --domain example.com
 ```
 
 **Authenticated Recon:**
@@ -108,6 +130,18 @@ python ad-recon.py --server 192.168.1.100 --username admin --password Passw0rd! 
 
 ```bash
 python ad-recon.py --server 192.168.1.100 --asrep users.txt
+```
+
+**Dump LAPS Passwords:**
+
+```bash
+python ad-recon.py --server 192.168.1.100 --username admin --password Passw0rd! --domain example.local --laps
+```
+
+**Check WebDAV Exploitability:**
+
+```bash
+python ad-recon.py --server 192.168.1.100 --webdav
 ```
 
 **Dump Secrets:**
@@ -133,5 +167,3 @@ Contributions are welcome! Please submit a pull request or open an issue to disc
 This script is inspired by techniques and methods from Juggernaut Sec's [Active Directory Hacking](https://juggernaut-sec.com/category/active-directory-hacking/) series.
 
 ---
-
-
