@@ -20,12 +20,12 @@ def connect_to_ad(server_address, domain=None, username=None, password=None):
     print(f"Successfully connected to {server_address} using {bind_type} bind.")
     return conn
 
-def enumerate_ldap_objects(conn):
+def enumerate_ldap_objects(conn, search_base):
     print("\n[+] Enumerating LDAP objects...")
 
     # Enumerate Domain Info
     conn.search(
-        search_base='dc=domain,dc=com',
+        search_base=search_base,
         search_filter='(objectClass=domain)',
         attributes=['*']
     )
@@ -35,7 +35,7 @@ def enumerate_ldap_objects(conn):
 
     # Enumerate Users
     conn.search(
-        search_base='dc=domain,dc=com',
+        search_base=search_base,
         search_filter='(objectClass=user)',
         attributes=['sAMAccountName', 'displayName', 'memberOf', 'userAccountControl']
     )
@@ -45,7 +45,7 @@ def enumerate_ldap_objects(conn):
 
     # Enumerate Groups
     conn.search(
-        search_base='dc=domain,dc=com',
+        search_base=search_base,
         search_filter='(objectClass=group)',
         attributes=['cn', 'member', 'groupType']
     )
@@ -55,7 +55,7 @@ def enumerate_ldap_objects(conn):
 
     # Enumerate Computers
     conn.search(
-        search_base='dc=domain,dc=com',
+        search_base=search_base,
         search_filter='(objectClass=computer)',
         attributes=['cn', 'operatingSystem', 'operatingSystemVersion', 'dNSHostName']
     )
@@ -65,8 +65,8 @@ def enumerate_ldap_objects(conn):
 
     # Enumerate Admins
     conn.search(
-        search_base='dc=domain,dc=com',
-        search_filter='(&(objectCategory=person)(objectClass=user)(memberOf=cn=Domain Admins,cn=Users,dc=domain,dc=com))',
+        search_base=search_base,
+        search_filter='(&(objectCategory=person)(objectClass=user)(memberOf=cn=Domain Admins,cn=Users,' + search_base + '))',
         attributes=['sAMAccountName', 'displayName', 'memberOf']
     )
     print("\n[+] Domain Admins:")
@@ -170,6 +170,7 @@ def main():
     parser.add_argument('--username', help='Username for LDAP/SMB bind (optional for anonymous)')
     parser.add_argument('--password', help='Password for LDAP/SMB bind (optional for anonymous)')
     parser.add_argument('--domain', help='Domain for LDAP/SMB bind (required if username is provided)')
+    parser.add_argument('--search-base', default='dc=domain,dc=com', help='Base DN for LDAP search (default: dc=domain,dc=com)')
     parser.add_argument('--kerberoast', action='store_true', help='Perform Kerberoasting')
     parser.add_argument('--asrep', help='Perform AS-REP Roasting with specified user file')
     parser.add_argument('--dump', action='store_true', help='Dump secrets using secretsdump')
@@ -184,7 +185,7 @@ def main():
 
     # Connect to AD and perform LDAP enumeration
     conn = connect_to_ad(args.server, args.domain, args.username, args.password)
-    enumerate_ldap_objects(conn)
+    enumerate_ldap_objects(conn, args.search_base)
     conn.unbind()
 
     # Enumerate NetBIOS and SMB shares
