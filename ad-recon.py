@@ -2,6 +2,8 @@ import argparse
 import logging
 from ldap3 import Server, Connection, ALL, NTLM, ANONYMOUS
 from impacket.smbconnection import SMBConnection
+from impacket.dcerpc.v5 import transport, srvs, lsat, lsad
+from impacket.dcerpc.v5.rpcrt import DCERPCException
 import subprocess
 import re
 import requests
@@ -36,11 +38,11 @@ def enumerate_ldap_objects(conn, search_base):
     queries = {
         'Users': {
             'filter': '(objectClass=user)',
-            'attributes': ['sAMAccountName', 'displayName', 'description', 'memberOf', 'userAccountControl']
+            'attributes': ['sAMAccountName', 'displayName', 'description', 'memberOf']
         },
         'Groups': {
             'filter': '(objectClass=group)',
-            'attributes': ['cn', 'description', 'member', 'groupType']
+            'attributes': ['cn', 'description', 'member']
         }
     }
 
@@ -59,9 +61,7 @@ def enumerate_ldap_objects(conn, search_base):
                     user_data = {
                         'Username': entry.sAMAccountName.value,
                         'Description': entry.description.value if entry.description else '',
-                        'MemberOf': ', '.join([group.split(',')[0].split('=')[1] for group in entry.memberOf]) if entry.memberOf else '',
-                        'Permissions': 'N/A',  # Placeholder, replace with actual permissions extraction if available
-                        'GPO Access': 'N/A'   # Placeholder, replace with GPO access details if available
+                        'MemberOf': ', '.join([group.split(',')[0].split('=')[1] for group in entry.memberOf]) if entry.memberOf else ''
                     }
                     results['Users'].append(user_data)
                     check_description_for_password(entry)
@@ -71,9 +71,7 @@ def enumerate_ldap_objects(conn, search_base):
                     group_data = {
                         'GroupName': entry.cn.value,
                         'Description': entry.description.value if entry.description else '',
-                        'Members': ', '.join(entry.member) if entry.member else '',
-                        'Permissions': 'N/A',  # Placeholder, replace with actual permissions extraction if available
-                        'GPO Access': 'N/A'   # Placeholder, replace with GPO access details if available
+                        'Members': ', '.join(entry.member) if entry.member else ''
                     }
                     results['Groups'].append(group_data)
         except Exception as e:
@@ -82,12 +80,12 @@ def enumerate_ldap_objects(conn, search_base):
     # Display Users in tabular format
     if results['Users']:
         logging.info("\n[+] Users Information Table:")
-        print(tabulate(results['Users'], headers="keys", tablefmt="grid"))
+        print(tabulate(results['Users'], headers="keys", tablefmt="fancy_grid"))
 
     # Display Groups in tabular format
     if results['Groups']:
         logging.info("\n[+] Groups Information Table:")
-        print(tabulate(results['Groups'], headers="keys", tablefmt="grid"))
+        print(tabulate(results['Groups'], headers="keys", tablefmt="fancy_grid"))
 
 def check_description_for_password(entry):
     """Check descriptions for potential passwords."""
@@ -244,6 +242,66 @@ def check_webdav_exploitability(server_address):
     except Exception as e:
         logging.error(f"Error checking WebDAV exploitability: {e}")
 
+def enumerate_rpc_users_groups(server_address, username, password, domain):
+    logging.info("\n[+] Enumerating Domain Users and Groups via RPC...")
+    try:
+        stringbinding = r'ncacn_np:{}[\pipe\lsarpc]'.format(server_address)
+        rpctransport = transport.DCERPCTransportFactory(stringbinding)
+        rpctransport.set_credentials(username, password, domain)
+
+        dce = rpctransport.get_dce_rpc()
+        dce.connect()
+        dce.bind(lsat.MSRPC_UUID_LSAT)
+
+        # Enumerate users
+        lsat_policy = lsad.hLsarOpenPolicy2(dce, lsat.LSAPR_POLICY_INFORMATION)
+        enum_context = 0
+        users = []
+
+        while True:
+            try:
+                enum_request = lsat.hLsarEnumerateAccountsWithUserRight(
+                    dce, lsat_policy['PolicyHandle'], 'SeInteractiveLogonRight', enum_context
+                )
+                enum_context = enum_request['EnumerationContext']
+                for account in enum_request['EnumerationBuffer']['UserAccounts']['Element']:
+                    users.append(account['Name'])
+                if enum_request['EnumerationContext'] == 0:
+                    break
+            except DCERPCException as e:
+                logging.error(f"Error enumerating users: {e}")
+                break
+
+        # Enumerate groups
+        groups = []
+        enum_context = 0
+        while True:
+            try:
+                enum_request = lsat.hLsarEnumerateAccountsWithUserRight(
+                    dce, lsat_policy['PolicyHandle'], 'SeGroupMembershipRight', enum_context
+                )
+                enum_context = enum_request['EnumerationContext']
+                for account in enum_request['EnumerationBuffer']['UserAccounts']['Element']:
+                    groups.append(account['Name'])
+                if enum_request['EnumerationContext'] == 0:
+                    break
+            except DCERPCException as e:
+                logging.error(f"Error enumerating groups: {e}")
+                break
+
+        # Display Users in tabular format
+        if users:
+            logging.info("\n[+] Domain Users via RPC:")
+            print(tabulate([[user] for user in users], headers=["Username"], tablefmt="fancy_grid"))
+
+        # Display Groups in tabular format
+        if groups:
+            logging.info("\n[+] Domain Groups via RPC:")
+            print(tabulate([[group] for group in groups], headers=["Group Name"], tablefmt="fancy_grid"))
+
+    except Exception as e:
+        logging.error(f"Error in RPC enumeration: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="Comprehensive Active Directory Reconnaissance and Attack Script")
     parser.add_argument('--server', required=True, help='LDAP/DC server address')
@@ -255,6 +313,7 @@ def main():
     parser.add_argument('--dump', action='store_true', help='Dump secrets using secretsdump')
     parser.add_argument('--laps', action='store_true', help='Dump LAPS passwords')
     parser.add_argument('--webdav', action='store_true', help='Check WebDAV exploitability')
+    parser.add_argument('--rpc', action='store_true', help='Enumerate domain users and groups via RPC')
     args = parser.parse_args()
 
     if args.username and not args.password:
@@ -292,6 +351,10 @@ def main():
     # Check WebDAV exploitability if specified
     if args.webdav:
         check_webdav_exploitability(args.server)
+
+    # Enumerate users and groups via RPC if specified
+    if args.rpc:
+        enumerate_rpc_users_groups(args.server, args.username, args.password, args.domain)
 
 if __name__ == "__main__":
     main()
