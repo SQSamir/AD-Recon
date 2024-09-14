@@ -2,7 +2,7 @@ import argparse
 import logging
 from ldap3 import Server, Connection, ALL, NTLM, ANONYMOUS
 from impacket.smbconnection import SMBConnection
-from impacket.dcerpc.v5 import transport, srvs, lsat, lsad
+from impacket.dcerpc.v5 import transport, lsat, lsad
 from impacket.dcerpc.v5.rpcrt import DCERPCException
 import subprocess
 import re
@@ -36,6 +36,10 @@ def enumerate_ldap_objects(conn, search_base):
 
     # Define queries for LDAP enumeration
     queries = {
+        'Domain Information': {
+            'filter': '(objectClass=domain)',
+            'attributes': ['distinguishedName', 'dc', 'nETBIOSName', 'description']
+        },
         'Users': {
             'filter': '(objectClass=user)',
             'attributes': ['sAMAccountName', 'displayName', 'description', 'memberOf']
@@ -43,49 +47,77 @@ def enumerate_ldap_objects(conn, search_base):
         'Groups': {
             'filter': '(objectClass=group)',
             'attributes': ['cn', 'description', 'member']
+        },
+        'Computers': {
+            'filter': '(objectClass=computer)',
+            'attributes': ['cn', 'operatingSystem', 'operatingSystemVersion', 'dNSHostName']
+        },
+        'Domain Admins': {
+            'filter': f'(&(objectCategory=person)(objectClass=user)(memberOf=CN=Domain Admins,CN=Users,{search_base}))',
+            'attributes': ['sAMAccountName', 'displayName', 'memberOf']
         }
     }
 
-    results = {
-        'Users': [],
-        'Groups': []
-    }
+    results = {key: [] for key in queries.keys()}
 
     for key, query in queries.items():
         try:
             conn.search(search_base=search_base, search_filter=query['filter'], attributes=query['attributes'])
             logging.info(f"\n[+] {key}:")
 
-            if key == 'Users':
-                for entry in conn.entries:
+            for entry in conn.entries:
+                if key == 'Domain Information':
+                    domain_data = {
+                        'DistinguishedName': entry.distinguishedName.value,
+                        'DomainComponent': entry.dc.value if 'dc' in entry else '',
+                        'NetBIOSName': entry.nETBIOSName.value if 'nETBIOSName' in entry else '',
+                        'Description': entry.description.value if 'description' in entry else ''
+                    }
+                    results[key].append(domain_data)
+                
+                elif key == 'Users':
                     user_data = {
                         'Username': entry.sAMAccountName.value,
+                        'DisplayName': entry.displayName.value if 'displayName' in entry else '',
                         'Description': entry.description.value if entry.description else '',
                         'MemberOf': ', '.join([group.split(',')[0].split('=')[1] for group in entry.memberOf]) if entry.memberOf else ''
                     }
-                    results['Users'].append(user_data)
+                    results[key].append(user_data)
                     check_description_for_password(entry)
 
-            elif key == 'Groups':
-                for entry in conn.entries:
+                elif key == 'Groups':
                     group_data = {
                         'GroupName': entry.cn.value,
                         'Description': entry.description.value if entry.description else '',
                         'Members': ', '.join(entry.member) if entry.member else ''
                     }
-                    results['Groups'].append(group_data)
+                    results[key].append(group_data)
+
+                elif key == 'Computers':
+                    computer_data = {
+                        'ComputerName': entry.cn.value,
+                        'OperatingSystem': entry.operatingSystem.value if 'operatingSystem' in entry else '',
+                        'OSVersion': entry.operatingSystemVersion.value if 'operatingSystemVersion' in entry else '',
+                        'DNSHostName': entry.dNSHostName.value if 'dNSHostName' in entry else ''
+                    }
+                    results[key].append(computer_data)
+
+                elif key == 'Domain Admins':
+                    admin_data = {
+                        'Username': entry.sAMAccountName.value,
+                        'DisplayName': entry.displayName.value if 'displayName' in entry else '',
+                        'MemberOf': ', '.join([group.split(',')[0].split('=')[1] for group in entry.memberOf]) if entry.memberOf else ''
+                    }
+                    results[key].append(admin_data)
+
         except Exception as e:
             logging.error(f"Error enumerating {key}: {e}")
 
-    # Display Users in tabular format
-    if results['Users']:
-        logging.info("\n[+] Users Information Table:")
-        print(tabulate(results['Users'], headers="keys", tablefmt="fancy_grid"))
-
-    # Display Groups in tabular format
-    if results['Groups']:
-        logging.info("\n[+] Groups Information Table:")
-        print(tabulate(results['Groups'], headers="keys", tablefmt="fancy_grid"))
+    # Display results in tabular format
+    for key, entries in results.items():
+        if entries:
+            logging.info(f"\n[+] {key} Information Table:")
+            print(tabulate(entries, headers="keys", tablefmt="fancy_grid"))
 
 def check_description_for_password(entry):
     """Check descriptions for potential passwords."""
