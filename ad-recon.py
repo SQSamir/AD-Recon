@@ -5,6 +5,7 @@ from impacket.smbconnection import SMBConnection
 import subprocess
 import re
 import requests
+from tabulate import tabulate
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,29 +32,67 @@ def parse_domain_to_search_base(domain):
 def enumerate_ldap_objects(conn, search_base):
     logging.info(f"Enumerating LDAP objects with search base: {search_base}")
 
+    # Define queries for LDAP enumeration
     queries = {
-        'Domain Information': {'filter': '(objectClass=domain)', 'attributes': ['*']},
-        'Users': {'filter': '(objectClass=user)', 'attributes': ['sAMAccountName', 'displayName', 'description', 'memberOf', 'userAccountControl']},
-        'Groups': {'filter': '(objectClass=group)', 'attributes': ['cn', 'description', 'member', 'groupType']},
-        'Computers': {'filter': '(objectClass=computer)', 'attributes': ['cn', 'operatingSystem', 'operatingSystemVersion', 'dNSHostName']},
-        'Domain Admins': {'filter': f'(&(objectCategory=person)(objectClass=user)(memberOf=cn=Domain Admins,cn=Users,{search_base}))', 'attributes': ['sAMAccountName', 'displayName', 'memberOf']}
+        'Users': {
+            'filter': '(objectClass=user)',
+            'attributes': ['sAMAccountName', 'displayName', 'description', 'memberOf', 'userAccountControl']
+        },
+        'Groups': {
+            'filter': '(objectClass=group)',
+            'attributes': ['cn', 'description', 'member', 'groupType']
+        }
+    }
+
+    results = {
+        'Users': [],
+        'Groups': []
     }
 
     for key, query in queries.items():
         try:
             conn.search(search_base=search_base, search_filter=query['filter'], attributes=query['attributes'])
             logging.info(f"\n[+] {key}:")
-            for entry in conn.entries:
-                logging.info(entry)
-                if 'description' in entry and entry.description:
+
+            if key == 'Users':
+                for entry in conn.entries:
+                    user_data = {
+                        'Username': entry.sAMAccountName.value,
+                        'Description': entry.description.value if entry.description else '',
+                        'MemberOf': ', '.join([group.split(',')[0].split('=')[1] for group in entry.memberOf]) if entry.memberOf else '',
+                        'Permissions': 'N/A',  # Placeholder, replace with actual permissions extraction if available
+                        'GPO Access': 'N/A'   # Placeholder, replace with GPO access details if available
+                    }
+                    results['Users'].append(user_data)
                     check_description_for_password(entry)
+
+            elif key == 'Groups':
+                for entry in conn.entries:
+                    group_data = {
+                        'GroupName': entry.cn.value,
+                        'Description': entry.description.value if entry.description else '',
+                        'Members': ', '.join(entry.member) if entry.member else '',
+                        'Permissions': 'N/A',  # Placeholder, replace with actual permissions extraction if available
+                        'GPO Access': 'N/A'   # Placeholder, replace with GPO access details if available
+                    }
+                    results['Groups'].append(group_data)
         except Exception as e:
             logging.error(f"Error enumerating {key}: {e}")
+
+    # Display Users in tabular format
+    if results['Users']:
+        logging.info("\n[+] Users Information Table:")
+        print(tabulate(results['Users'], headers="keys", tablefmt="grid"))
+
+    # Display Groups in tabular format
+    if results['Groups']:
+        logging.info("\n[+] Groups Information Table:")
+        print(tabulate(results['Groups'], headers="keys", tablefmt="grid"))
 
 def check_description_for_password(entry):
     """Check descriptions for potential passwords."""
     password_patterns = re.compile(r'password\s*[:=]\s*(\S+)', re.IGNORECASE)
-    description = entry.description.value
+    description = entry.description.value if entry.description else ''
     matches = password_patterns.findall(description)
     if matches:
         logging.warning(f"Potential password found in description of {entry.entry_dn}: {matches}")
